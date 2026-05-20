@@ -171,20 +171,19 @@ const wrap   = document.getElementById('board-wrap');
 //  LAYOUT
 // ══════════════════════════════════════════════════════
 function layout() {
-  const vw = window.innerWidth, vh = window.innerHeight;
-  CAN_W  = Math.min(vw, 500);
-  HUD_H  = Math.round(CAN_W * 0.15);
-  PLAY_H = CAN_W;
+  // Use the full viewport — no caps, no margins.
+  // On phones this fills edge-to-edge; on iPad it fills the screen too.
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+
+  CAN_W = vw;
+  // HUD strips are 12% of width each, but at least 48px for tap comfort
+  HUD_H = Math.max(48, Math.round(CAN_W * 0.12));
+  // Play area takes whatever height is left after the two HUD strips
+  PLAY_H = Math.max(vh - HUD_H * 2, CAN_W * 0.6);
   CAN_H  = PLAY_H + HUD_H * 2;
   MID_Y  = HUD_H + PLAY_H / 2;
-  if (CAN_H > vh * 0.92) {
-    const s = (vh * 0.92) / CAN_H;
-    CAN_W  = Math.round(CAN_W * s);
-    HUD_H  = Math.round(HUD_H * s);
-    PLAY_H = Math.round(PLAY_H * s);
-    CAN_H  = PLAY_H + HUD_H * 2;
-    MID_Y  = HUD_H + PLAY_H / 2;
-  }
+
   canvas.width  = CAN_W;
   canvas.height = CAN_H;
   wrap.style.width  = CAN_W + 'px';
