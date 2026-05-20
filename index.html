@@ -1,0 +1,703 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>AppADay · 013 · Flick</title>
+<link href="https://fonts.googleapis.com/css2?family=Rubik:ital,wght@0,300;0,400;1,300&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+
+  html, body {
+    width: 100%; height: 100%;
+    background: #e0e0d8;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    overflow: hidden;
+    font-family: 'Rubik', sans-serif;
+    touch-action: none; user-select: none;
+  }
+
+  #board-wrap {
+    position: relative;
+    background: #fff;
+    border-radius: 6px;
+    box-shadow: 0 8px 40px rgba(0,0,0,0.15);
+  }
+
+  canvas { display: block; border-radius: 6px; }
+
+  .hud {
+    position: absolute; left: 0; right: 0;
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 0 14px; pointer-events: none; z-index: 2;
+  }
+  #hud-top    { top: 0; }
+  #hud-bottom { bottom: 0; }
+
+  .score-num {
+    font-size: 28px; font-weight: 300; font-style: italic;
+    color: rgba(0,0,0,0.18); line-height: 1; transition: color 0.2s;
+  }
+  .score-num.active { color: rgba(0,0,0,0.42); }
+
+  .puck-dots { display: flex; gap: 5px; align-items: center; }
+  .puck-dot  { width: 6px; height: 6px; border-radius: 50%; background: rgba(0,0,0,0.22); transition: opacity 0.2s; }
+  .puck-dot.used { opacity: 0.15; }
+
+  #overlay {
+    position: fixed; inset: 0;
+    background: rgba(224,224,216,0.96);
+    display: flex; flex-direction: column;
+    justify-content: center; align-items: center;
+    gap: 18px; z-index: 50; padding: 32px;
+  }
+  #overlay.hidden { display: none; }
+
+  .ov-title { font-size: 52px; font-weight: 300; font-style: italic; color: rgba(0,0,0,0.55); letter-spacing: -0.02em; }
+  .ov-sub   { font-size: 14px; color: rgba(0,0,0,0.35); text-align: center; max-width: 280px; line-height: 1.6; }
+  .ov-btn   { background: rgba(0,0,0,0.08); border: none; border-radius: 100px; padding: 13px 44px; font-family: 'Rubik', sans-serif; font-size: 15px; color: rgba(0,0,0,0.55); cursor: pointer; }
+  .ov-btn:active { background: rgba(0,0,0,0.15); }
+  .ov-puck-row { display: flex; gap: 12px; align-items: center; }
+  .ov-puck-btn { background: none; border: 1.5px solid rgba(0,0,0,0.15); border-radius: 100px; padding: 8px 18px; font-family: 'Rubik', sans-serif; font-size: 14px; color: rgba(0,0,0,0.4); cursor: pointer; }
+  .ov-puck-num { font-size: 22px; font-weight: 300; color: rgba(0,0,0,0.5); min-width: 24px; text-align: center; }
+  .ov-scores { display: flex; gap: 28px; align-items: baseline; }
+  .ov-score-block { text-align: center; }
+  .ov-score-label { font-size: 11px; letter-spacing: 0.1em; color: rgba(0,0,0,0.3); text-transform: uppercase; }
+  .ov-score-big   { font-size: 54px; font-weight: 300; font-style: italic; line-height: 1; }
+  .ov-score-vs    { font-size: 18px; color: rgba(0,0,0,0.2); font-weight: 300; }
+  .ov-winner      { font-size: 22px; font-weight: 300; color: rgba(0,0,0,0.5); }
+
+  #app-label { position: fixed; bottom: 14px; font-size: 10px; letter-spacing: 0.14em; color: rgba(0,0,0,0.2); text-transform: uppercase; pointer-events: none; }
+  #app-label a { color: inherit; text-decoration: none; }
+</style>
+</head>
+<body>
+
+<div id="board-wrap">
+  <div class="hud" id="hud-top">
+    <span class="score-num" id="score-p1">0</span>
+    <div class="puck-dots" id="dots-p1"></div>
+  </div>
+  <canvas id="c"></canvas>
+  <div class="hud" id="hud-bottom">
+    <div class="puck-dots" id="dots-p2"></div>
+    <span class="score-num" id="score-p2">0</span>
+  </div>
+</div>
+
+<div id="overlay">
+  <div class="ov-title">flick</div>
+  <div class="ov-sub">Drag your puck into the opponent's half. Most pucks in their zone wins. Hit the ★ blast token to send a shockwave across the board!</div>
+  <div class="ov-puck-row">
+    <button class="ov-puck-btn" onclick="changePucks(-1)">−</button>
+    <span class="ov-puck-num" id="puck-count">5</span>
+    <button class="ov-puck-btn" onclick="changePucks(+1)">+</button>
+  </div>
+  <div style="font-size:11px;color:rgba(0,0,0,0.25);letter-spacing:0.1em;text-transform:uppercase;margin-top:-6px;">pucks each</div>
+  <button class="ov-btn" onclick="startGame()">play</button>
+</div>
+
+<div id="app-label"><a href="https://augustineiacopelli.github.io">appaday</a> · 013 · flick</div>
+
+<script>
+// ══════════════════════════════════════════════════════
+//  PHYSICS CONSTANTS
+// ══════════════════════════════════════════════════════
+const FRICTION  = 0.983;
+const MIN_SPEED = 0.12;
+const MAX_FLICK = 32;
+const WALL_DAMP = 0.62;
+const PUCK_DAMP = 0.70;
+
+// Puck radius as fraction of play-area width, cycles each turn
+const SIZE_POOL = [0.055, 0.075, 0.055, 0.095, 0.055, 0.075];
+
+// ── COLOUR PALETTES ──────────────────────────────────
+// Each entry: [p1PuckColor, p1HalfBg, p2PuckColor, p2HalfBg]
+const PALETTES = [
+  ['#F5A623', '#F5D76E', '#4EC89A', '#A8DFC8'],  // classic orange / teal
+  ['#E05C5C', '#F2A5A5', '#5B8DEF', '#A5C4F7'],  // red / blue
+  ['#9B59B6', '#D7B8F5', '#27AE60', '#A8E6BE'],  // purple / green
+  ['#E67E22', '#FAD5A5', '#2980B9', '#A5D3F5'],  // amber / sky
+  ['#C0392B', '#F1A89A', '#8E44AD', '#D4A8F5'],  // crimson / violet
+  ['#16A085', '#A0DDD5', '#D35400', '#F5C09A'],  // teal / burnt orange
+];
+
+let P1_COLOR, P1_HALF, P2_COLOR, P2_HALF;
+
+// ══════════════════════════════════════════════════════
+//  LAYOUT DIMENSIONS
+//   y=0         top canvas / P1 back wall
+//   y=HUD_H     top of play area
+//   y=MID_Y     centre line
+//   y=HUD_H+PLAY_H  bottom of play area
+//   y=CAN_H     bottom canvas / P2 back wall
+// ══════════════════════════════════════════════════════
+let CAN_W, CAN_H, HUD_H, PLAY_H, MID_Y;
+let gameStarted = false;
+
+// ══════════════════════════════════════════════════════
+//  GAME STATE
+// ══════════════════════════════════════════════════════
+let pucks = [];
+let turn  = 0;   // 0=P1(top)  1=P2(bottom)
+let p1Left, p2Left;
+let pucksPerPlayer = 5;
+let sizeIdx = 0;
+let phase   = 'idle';  // idle | dragging | flying | gameover
+
+let readyPuck = null;
+let prevX = 0, prevY = 0, velX = 0, velY = 0;
+
+// ── POWERUP STATE ─────────────────────────────────────
+// Each player gets at most one powerup opportunity per game.
+// p1TurnsPlayed / p2TurnsPlayed counts turns TAKEN (after each flick).
+// powerup: null | { x, y, r, forPlayer (0|1), alive: true }
+let p1PowerupUsed = false;  // true once P1's powerup has appeared
+let p2PowerupUsed = false;
+let p1TurnsPlayed = 0;
+let p2TurnsPlayed = 0;
+let powerup = null;
+
+// Blast shockwave animation
+let blastAnim = null;  // { x, y, t, maxT } — t counts up frames
+
+const canvas = document.getElementById('c');
+const ctx    = canvas.getContext('2d');
+const wrap   = document.getElementById('board-wrap');
+
+// ══════════════════════════════════════════════════════
+//  LAYOUT
+// ══════════════════════════════════════════════════════
+function layout() {
+  const vw = window.innerWidth, vh = window.innerHeight;
+  CAN_W  = Math.min(vw, 500);
+  HUD_H  = Math.round(CAN_W * 0.15);
+  PLAY_H = CAN_W;
+  CAN_H  = PLAY_H + HUD_H * 2;
+  MID_Y  = HUD_H + PLAY_H / 2;
+  if (CAN_H > vh * 0.92) {
+    const s = (vh * 0.92) / CAN_H;
+    CAN_W  = Math.round(CAN_W * s);
+    HUD_H  = Math.round(HUD_H * s);
+    PLAY_H = Math.round(PLAY_H * s);
+    CAN_H  = PLAY_H + HUD_H * 2;
+    MID_Y  = HUD_H + PLAY_H / 2;
+  }
+  canvas.width  = CAN_W;
+  canvas.height = CAN_H;
+  wrap.style.width  = CAN_W + 'px';
+  wrap.style.height = CAN_H + 'px';
+  document.getElementById('hud-top').style.height    = HUD_H + 'px';
+  document.getElementById('hud-bottom').style.height = HUD_H + 'px';
+}
+
+window.addEventListener('resize', () => {
+  layout();
+  if (gameStarted) { spawnReadyPuck(); drawFrame(); }
+});
+
+// ══════════════════════════════════════════════════════
+//  SETTINGS
+// ══════════════════════════════════════════════════════
+function changePucks(d) {
+  pucksPerPlayer = Math.max(3, Math.min(9, pucksPerPlayer + d));
+  const el = document.getElementById('puck-count');
+  if (el) el.textContent = pucksPerPlayer;
+}
+
+// ══════════════════════════════════════════════════════
+//  GAME INIT
+// ══════════════════════════════════════════════════════
+function startGame() {
+  document.getElementById('overlay').classList.add('hidden');
+  layout();
+
+  // Pick a random palette
+  const pal = PALETTES[Math.floor(Math.random() * PALETTES.length)];
+  P1_COLOR = pal[0]; P1_HALF = pal[1];
+  P2_COLOR = pal[2]; P2_HALF = pal[3];
+
+  pucks          = [];
+  turn           = 0;
+  p1Left         = pucksPerPlayer;
+  p2Left         = pucksPerPlayer;
+  sizeIdx        = 0;
+  phase          = 'idle';
+  readyPuck      = null;
+  p1PowerupUsed  = false;
+  p2PowerupUsed  = false;
+  p1TurnsPlayed  = 0;
+  p2TurnsPlayed  = 0;
+  powerup        = null;
+  blastAnim      = null;
+  gameStarted    = true;
+
+  updateHUD();
+  spawnReadyPuck();
+  cancelAnimationFrame(window._raf);
+  loop();
+}
+
+// ══════════════════════════════════════════════════════
+//  READY PUCK
+// ══════════════════════════════════════════════════════
+function restingY() {
+  return turn === 0 ? HUD_H / 2 : HUD_H + PLAY_H + HUD_H / 2;
+}
+
+function spawnReadyPuck() {
+  const remaining = turn === 0 ? p1Left : p2Left;
+  if (remaining === 0) { readyPuck = null; return; }
+  const r = CAN_W * SIZE_POOL[sizeIdx % SIZE_POOL.length];
+  readyPuck = { x: CAN_W / 2, y: restingY(), r, owner: turn,
+                mass: (r / (CAN_W * 0.055)) ** 2, vx: 0, vy: 0, moving: false };
+}
+
+// ══════════════════════════════════════════════════════
+//  POWERUP LOGIC
+// ══════════════════════════════════════════════════════
+function maybeSpawnPowerup() {
+  // Called at the START of each idle phase (after nextTurn sets up the new turn).
+  // Only spawn if this player hasn't had their powerup yet,
+  // they have more than 1 puck remaining, and the random roll succeeds.
+  const used      = turn === 0 ? p1PowerupUsed : p2PowerupUsed;
+  const played    = turn === 0 ? p1TurnsPlayed : p2TurnsPlayed;
+  const remaining = turn === 0 ? p1Left        : p2Left;
+
+  if (used || remaining <= 1) { powerup = null; return; }
+
+  // Probability: 0% on turn 0 played, +10% each turn, max 50%
+  const chance = Math.min(played * 0.10, 0.50);
+  if (Math.random() >= chance) { powerup = null; return; }
+
+  // Mark used so it can only appear once per player per game
+  if (turn === 0) p1PowerupUsed = true;
+  else            p2PowerupUsed = true;
+
+  // Place in the OPPONENT's half, random position away from edges
+  const pr   = CAN_W * 0.045;
+  const margin = pr * 3;
+  const rx   = margin + Math.random() * (CAN_W - margin * 2);
+  let   ry;
+  if (turn === 0) {
+    // P1's powerup appears in P2's half (bottom colored zone)
+    ry = MID_Y + margin + Math.random() * (PLAY_H / 2 - margin * 2);
+  } else {
+    // P2's powerup appears in P1's half (top colored zone)
+    ry = HUD_H + margin + Math.random() * (PLAY_H / 2 - margin * 2);
+  }
+
+  powerup = { x: rx, y: ry, r: pr, alive: true, pulse: 0 };
+}
+
+function checkBlast(pk) {
+  // Called when a flying puck overlaps the powerup token.
+  if (!powerup || !powerup.alive) return;
+  const dx = pk.x - powerup.x, dy = pk.y - powerup.y;
+  if (Math.hypot(dx, dy) > pk.r + powerup.r) return;
+
+  // Trigger blast
+  blastAnim = { x: powerup.x, y: powerup.y, t: 0, maxT: 28 };
+  powerup.alive = false;
+  powerup = null;
+
+  const BLAST_RADIUS = CAN_W * 0.52;
+  const BLAST_FORCE  = 22;
+
+  for (const p of pucks) {
+    const bx = p.x - blastAnim.x, by = p.y - blastAnim.y;
+    const dist = Math.hypot(bx, by);
+    if (dist < 0.01 || dist > BLAST_RADIUS) continue;
+    const falloff = 1 - dist / BLAST_RADIUS;
+    const force   = BLAST_FORCE * falloff;
+    p.vx += (bx / dist) * force;
+    p.vy += (by / dist) * force;
+    // Cap speed post-blast
+    const sp = Math.hypot(p.vx, p.vy);
+    if (sp > MAX_FLICK * 1.4) { p.vx = p.vx/sp * MAX_FLICK * 1.4; p.vy = p.vy/sp * MAX_FLICK * 1.4; }
+    p.moving = true;
+  }
+  // Also blast the puck that hit it
+  const bx = pk.x - blastAnim.x, by = pk.y - blastAnim.y;
+  const dist = Math.hypot(bx, by) || 1;
+  pk.vx += (bx / dist) * BLAST_FORCE * 0.6;
+  pk.vy += (by / dist) * BLAST_FORCE * 0.6;
+  const sp = Math.hypot(pk.vx, pk.vy);
+  if (sp > MAX_FLICK * 1.4) { pk.vx = pk.vx/sp * MAX_FLICK * 1.4; pk.vy = pk.vy/sp * MAX_FLICK * 1.4; }
+}
+
+// ══════════════════════════════════════════════════════
+//  HUD
+// ══════════════════════════════════════════════════════
+function updateHUD() {
+  const { p1, p2 } = calcScores();
+  document.getElementById('score-p1').textContent = p1;
+  document.getElementById('score-p2').textContent = p2;
+  document.getElementById('score-p1').classList.toggle('active', turn === 0 && phase !== 'gameover');
+  document.getElementById('score-p2').classList.toggle('active', turn === 1 && phase !== 'gameover');
+  renderDots('dots-p1', pucksPerPlayer, p1Left);
+  renderDots('dots-p2', pucksPerPlayer, p2Left);
+}
+
+function renderDots(id, total, remaining) {
+  const el = document.getElementById(id);
+  el.innerHTML = '';
+  // Show up to 'total' dots but never fewer than what's used
+  const show = Math.max(total, pucksPerPlayer);
+  for (let i = 0; i < show; i++) {
+    const d = document.createElement('div');
+    d.className = 'puck-dot' + (i >= remaining ? ' used' : '');
+    el.appendChild(d);
+  }
+}
+
+// ══════════════════════════════════════════════════════
+//  SCORING
+// ══════════════════════════════════════════════════════
+function calcScores() {
+  let p1 = 0, p2 = 0;
+  for (const pk of pucks) {
+    if (pk.y < HUD_H || pk.y > HUD_H + PLAY_H) continue;
+    if (pk.owner === 0 && pk.y > MID_Y) p1++;
+    if (pk.owner === 1 && pk.y < MID_Y) p2++;
+  }
+  return { p1, p2 };
+}
+
+// ══════════════════════════════════════════════════════
+//  PHYSICS
+// ══════════════════════════════════════════════════════
+function integrate() {
+  let any = false;
+  for (const pk of pucks) {
+    if (!pk.moving) continue;
+    any = true;
+    pk.x += pk.vx; pk.y += pk.vy;
+    pk.vx *= FRICTION; pk.vy *= FRICTION;
+
+    if (pk.x - pk.r < 0)     { pk.x = pk.r;         pk.vx =  Math.abs(pk.vx) * WALL_DAMP; }
+    if (pk.x + pk.r > CAN_W) { pk.x = CAN_W - pk.r; pk.vx = -Math.abs(pk.vx) * WALL_DAMP; }
+    if (pk.y - pk.r < 0)     { pk.y = pk.r;          pk.vy =  Math.abs(pk.vy) * WALL_DAMP; }
+    if (pk.y + pk.r > CAN_H) { pk.y = CAN_H - pk.r;  pk.vy = -Math.abs(pk.vy) * WALL_DAMP; }
+
+    if (Math.hypot(pk.vx, pk.vy) < MIN_SPEED) { pk.vx = pk.vy = 0; pk.moving = false; }
+
+    checkBlast(pk);
+  }
+  for (let i = 0; i < pucks.length; i++)
+    for (let j = i + 1; j < pucks.length; j++)
+      collide(pucks[i], pucks[j]);
+  return any;
+}
+
+function collide(a, b) {
+  const dx = b.x - a.x, dy = b.y - a.y;
+  const d = Math.hypot(dx, dy), mn = a.r + b.r;
+  if (d >= mn || d < 0.001) return;
+  const nx = dx/d, ny = dy/d, ov = mn - d, mt = a.mass + b.mass;
+  a.x -= nx*ov*b.mass/mt; a.y -= ny*ov*b.mass/mt;
+  b.x += nx*ov*a.mass/mt; b.y += ny*ov*a.mass/mt;
+  const relV = (a.vx-b.vx)*nx + (a.vy-b.vy)*ny;
+  if (relV <= 0) return;
+  const imp = 2*relV/mt*PUCK_DAMP;
+  a.vx -= imp*b.mass*nx; a.vy -= imp*b.mass*ny;
+  b.vx += imp*a.mass*nx; b.vy += imp*a.mass*ny;
+  if (Math.hypot(a.vx,a.vy) > 0.05) a.moving = true;
+  if (Math.hypot(b.vx,b.vy) > 0.05) b.moving = true;
+}
+
+// ══════════════════════════════════════════════════════
+//  OOB — settled puck with center in white strip
+// ══════════════════════════════════════════════════════
+function checkOOB() {
+  const remove = [];
+  for (const pk of pucks) {
+    if (pk.moving) continue;
+    if (pk.y < HUD_H)              remove.push({ pk, who: 0 });
+    else if (pk.y > HUD_H + PLAY_H) remove.push({ pk, who: 1 });
+  }
+  for (const { pk, who } of remove) {
+    pucks.splice(pucks.indexOf(pk), 1);
+    if (who === 0) p1Left++; else p2Left++;
+  }
+  if (remove.length) updateHUD();
+}
+
+// ══════════════════════════════════════════════════════
+//  DRAWING
+// ══════════════════════════════════════════════════════
+function drawFrame() {
+  ctx.clearRect(0, 0, CAN_W, CAN_H);
+
+  // Board zones
+  ctx.fillStyle = '#FFFFFF';
+  ctx.fillRect(0, 0, CAN_W, HUD_H);
+  ctx.fillStyle = P1_HALF;
+  ctx.fillRect(0, HUD_H, CAN_W, PLAY_H / 2);
+  ctx.fillStyle = P2_HALF;
+  ctx.fillRect(0, MID_Y, CAN_W, PLAY_H / 2);
+  ctx.fillStyle = '#FFFFFF';
+  ctx.fillRect(0, HUD_H + PLAY_H, CAN_W, HUD_H);
+
+  // Lines
+  ctx.save();
+  ctx.strokeStyle = 'rgba(255,255,255,0.6)';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(0, MID_Y); ctx.lineTo(CAN_W, MID_Y); ctx.stroke();
+  ctx.strokeStyle = 'rgba(0,0,0,0.06)';
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(0, HUD_H); ctx.lineTo(CAN_W, HUD_H); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(0, HUD_H+PLAY_H); ctx.lineTo(CAN_W, HUD_H+PLAY_H); ctx.stroke();
+  ctx.restore();
+
+  // Blast wave animation
+  if (blastAnim) {
+    const prog = blastAnim.t / blastAnim.maxT;
+    const radius = CAN_W * 0.52 * prog;
+    const alpha  = (1 - prog) * 0.5;
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(blastAnim.x, blastAnim.y, radius, 0, Math.PI * 2);
+    ctx.strokeStyle = `rgba(255,255,255,${alpha})`;
+    ctx.lineWidth = 6 * (1 - prog);
+    ctx.stroke();
+    ctx.restore();
+    blastAnim.t++;
+    if (blastAnim.t >= blastAnim.maxT) blastAnim = null;
+  }
+
+  // Powerup token
+  if (powerup && powerup.alive) {
+    powerup.pulse = (powerup.pulse || 0) + 0.07;
+    const pulse = Math.sin(powerup.pulse) * 0.15 + 1;
+    drawStar(powerup.x, powerup.y, powerup.r * pulse);
+  }
+
+  // Settled pucks
+  for (const pk of pucks) drawPuck(pk, false);
+
+  // Ready/dragging puck
+  if (readyPuck && phase !== 'flying' && phase !== 'gameover') {
+    if (phase === 'dragging') {
+      const speed = Math.hypot(velX, velY);
+      if (speed > 0.3) {
+        const power = Math.min(speed / 5, 1);
+        ctx.save();
+        ctx.setLineDash([4, 6]);
+        ctx.strokeStyle = 'rgba(255,255,255,0.6)';
+        ctx.lineWidth = 1.5;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(readyPuck.x, readyPuck.y);
+        ctx.lineTo(readyPuck.x + (velX/speed)*power*70, readyPuck.y + (velY/speed)*power*70);
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
+    drawPuck(readyPuck, phase === 'idle');
+  }
+}
+
+function drawPuck(pk, isResting) {
+  const color = pk.owner === 0 ? P1_COLOR : P2_COLOR;
+  ctx.save();
+  ctx.shadowColor = 'rgba(0,0,0,0.2)';
+  ctx.shadowBlur  = 10;
+  ctx.shadowOffsetY = 3;
+  ctx.globalAlpha = isResting ? 0.55 : 1.0;
+  ctx.beginPath();
+  ctx.arc(pk.x, pk.y, pk.r, 0, Math.PI * 2);
+  ctx.fillStyle = color;
+  ctx.fill();
+  ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
+  ctx.strokeStyle = 'rgba(255,255,255,0.78)';
+  ctx.lineWidth = pk.r * 0.18;
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawStar(cx, cy, r) {
+  const spikes = 5, inner = r * 0.45;
+  ctx.save();
+  ctx.shadowColor = 'rgba(255,220,50,0.7)';
+  ctx.shadowBlur  = 14;
+  ctx.beginPath();
+  for (let i = 0; i < spikes * 2; i++) {
+    const angle  = (i * Math.PI / spikes) - Math.PI / 2;
+    const radius = i % 2 === 0 ? r : inner;
+    const x = cx + Math.cos(angle) * radius;
+    const y = cy + Math.sin(angle) * radius;
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  }
+  ctx.closePath();
+  ctx.fillStyle   = '#FFD700';
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+  ctx.lineWidth   = r * 0.12;
+  ctx.stroke();
+  ctx.restore();
+}
+
+// ══════════════════════════════════════════════════════
+//  GAME LOOP
+// ══════════════════════════════════════════════════════
+function loop() {
+  if (phase === 'flying') {
+    const moving = integrate();
+    checkOOB();
+    drawFrame();
+    if (!moving) {
+      if (p1Left === 0 && p2Left === 0) { endGame(); return; }
+      nextTurn();
+    }
+  } else {
+    drawFrame();
+  }
+  window._raf = requestAnimationFrame(loop);
+}
+
+function nextTurn() {
+  // Count the turn that just finished
+  if (turn === 0) p1TurnsPlayed++;
+  else            p2TurnsPlayed++;
+
+  // Powerup for the current turn is expired — clear it if still alive
+  powerup = null;
+
+  sizeIdx++;
+  const other = turn === 0 ? 1 : 0;
+  if (other === 0 && p1Left > 0)      turn = 0;
+  else if (other === 1 && p2Left > 0) turn = 1;
+  else if (turn === 0 && p1Left > 0)  turn = 0;
+  else if (turn === 1 && p2Left > 0)  turn = 1;
+
+  phase = 'idle';
+  spawnReadyPuck();
+  maybeSpawnPowerup();
+  updateHUD();
+}
+
+function endGame() {
+  phase = 'gameover';
+  readyPuck = null;
+  powerup   = null;
+  cancelAnimationFrame(window._raf);
+  drawFrame();
+  updateHUD();
+  const { p1, p2 } = calcScores();
+  const p1Name = colorName(P1_COLOR), p2Name = colorName(P2_COLOR);
+  const winText = p1 > p2 ? `${p1Name} wins` : p2 > p1 ? `${p2Name} wins` : 'tie game';
+  const ov = document.getElementById('overlay');
+  ov.innerHTML = `
+    <div class="ov-title">done</div>
+    <div class="ov-scores">
+      <div class="ov-score-block">
+        <div class="ov-score-label" style="color:${P1_COLOR}">${p1Name}</div>
+        <div class="ov-score-big"   style="color:${P1_COLOR}">${p1}</div>
+      </div>
+      <div class="ov-score-vs">—</div>
+      <div class="ov-score-block">
+        <div class="ov-score-label" style="color:${P2_COLOR}">${p2Name}</div>
+        <div class="ov-score-big"   style="color:${P2_COLOR}">${p2}</div>
+      </div>
+    </div>
+    <div class="ov-winner">${winText}</div>
+    <button class="ov-btn" onclick="restartPrompt()">play again</button>
+  `;
+  ov.classList.remove('hidden');
+}
+
+function colorName(hex) {
+  const map = {
+    '#F5A623':'orange','#E05C5C':'red','#9B59B6':'purple',
+    '#E67E22':'amber','#C0392B':'crimson','#16A085':'teal',
+    '#4EC89A':'teal','#5B8DEF':'blue','#27AE60':'green',
+    '#2980B9':'blue','#8E44AD':'violet','#D35400':'orange',
+  };
+  return map[hex] || 'player';
+}
+
+function restartPrompt() {
+  const ov = document.getElementById('overlay');
+  ov.innerHTML = `
+    <div class="ov-title">flick</div>
+    <div class="ov-sub">Drag your puck into the opponent's half. Most pucks in their zone wins. Hit the ★ blast token to send a shockwave!</div>
+    <div class="ov-puck-row">
+      <button class="ov-puck-btn" onclick="changePucks(-1)">−</button>
+      <span class="ov-puck-num" id="puck-count">${pucksPerPlayer}</span>
+      <button class="ov-puck-btn" onclick="changePucks(+1)">+</button>
+    </div>
+    <div style="font-size:11px;color:rgba(0,0,0,0.25);letter-spacing:0.1em;text-transform:uppercase;margin-top:-6px;">pucks each</div>
+    <button class="ov-btn" onclick="startGame()">play</button>
+  `;
+}
+
+// ══════════════════════════════════════════════════════
+//  INPUT
+// ══════════════════════════════════════════════════════
+function getPos(e) {
+  const rect = canvas.getBoundingClientRect();
+  const src  = e.touches ? e.touches[0] : (e.changedTouches ? e.changedTouches[0] : e);
+  return {
+    x: (src.clientX - rect.left) * (CAN_W / rect.width),
+    y: (src.clientY - rect.top)  * (CAN_H / rect.height),
+  };
+}
+
+canvas.addEventListener('touchstart', e => { e.preventDefault(); onDown(e); }, { passive: false });
+canvas.addEventListener('touchmove',  e => { e.preventDefault(); onMove(e); }, { passive: false });
+canvas.addEventListener('touchend',   e => { e.preventDefault(); onUp(e);   }, { passive: false });
+canvas.addEventListener('mousedown',  onDown);
+canvas.addEventListener('mousemove',  onMove);
+canvas.addEventListener('mouseup',    onUp);
+
+function onDown(e) {
+  if (phase === 'flying' || phase === 'gameover') return;
+  if (!readyPuck) return;
+  const pos = getPos(e);
+  prevX = pos.x; prevY = pos.y; velX = 0; velY = 0;
+  readyPuck.x = Math.max(readyPuck.r, Math.min(CAN_W - readyPuck.r, pos.x));
+  readyPuck.y = Math.max(readyPuck.r, Math.min(CAN_H - readyPuck.r, pos.y));
+  phase = 'dragging';
+}
+
+function onMove(e) {
+  if (phase !== 'dragging' || !readyPuck) return;
+  const pos = getPos(e);
+  const dx = pos.x - prevX, dy = pos.y - prevY;
+  velX = dx * 0.6 + velX * 0.4;
+  velY = dy * 0.6 + velY * 0.4;
+  prevX = pos.x; prevY = pos.y;
+  readyPuck.x = Math.max(readyPuck.r, Math.min(CAN_W - readyPuck.r, pos.x));
+  readyPuck.y = Math.max(readyPuck.r, Math.min(CAN_H - readyPuck.r, pos.y));
+}
+
+function onUp(e) {
+  if (phase !== 'dragging' || !readyPuck) return;
+  const speed = Math.hypot(velX, velY);
+  if (speed < 0.8) {
+    readyPuck.x = CAN_W / 2; readyPuck.y = restingY();
+    phase = 'idle'; return;
+  }
+  const scale = Math.min(speed * 3.5, MAX_FLICK) / speed;
+  readyPuck.vx = velX * scale;
+  readyPuck.vy = velY * scale;
+  const fs = Math.hypot(readyPuck.vx, readyPuck.vy);
+  if (fs > MAX_FLICK) { readyPuck.vx = readyPuck.vx/fs*MAX_FLICK; readyPuck.vy = readyPuck.vy/fs*MAX_FLICK; }
+  readyPuck.moving = true;
+  pucks.push(readyPuck);
+  if (turn === 0) p1Left--; else p2Left--;
+  readyPuck = null;
+  phase = 'flying';
+  updateHUD();
+}
+
+// ══════════════════════════════════════════════════════
+//  BOOT
+// ══════════════════════════════════════════════════════
+layout();
+</script>
+</body>
+</html>
