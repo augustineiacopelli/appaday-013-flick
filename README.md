@@ -39,3 +39,8 @@ Two players take turns dragging and flicking pucks across a divided board, tryin
 - [x] Six randomized color palettes per game
 - [x] Mobile-friendly touch controls on 375px viewport
 - [x] AppADay header with home link
+
+## Future Upgrades
+- Need to fix glitch that allows a player to "pick up" and play their pucks from anywhere on the board instead of only from their end.
+- Brainstorm additional upgrades that could be worked into the game
+- Brainstorm player logins and upgrade store (various "surfaces" that mess with puck movement, ghost puck that can pass through other pucks, etc)
