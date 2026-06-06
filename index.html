@@ -68,8 +68,7 @@
   .ov-score-vs    { font-size: 18px; color: rgba(0,0,0,0.2); font-weight: 300; }
   .ov-winner      { font-size: 22px; font-weight: 300; color: rgba(0,0,0,0.5); }
 
-  #app-label { position: fixed; bottom: 14px; font-size: 10px; letter-spacing: 0.14em; color: rgba(0,0,0,0.2); text-transform: uppercase; pointer-events: none; }
-  #app-label a { color: inherit; text-decoration: none; }
+
 </style>
 </head>
 <body>
@@ -96,9 +95,9 @@
   </div>
   <div style="font-size:11px;color:rgba(0,0,0,0.25);letter-spacing:0.1em;text-transform:uppercase;margin-top:-6px;">pucks each</div>
   <button class="ov-btn" onclick="startGame()">play</button>
+  <a href="https://augustineiacopelli.github.io/appaday/" style="font-size:10px;letter-spacing:0.14em;text-transform:uppercase;color:rgba(0,0,0,0.2);text-decoration:none;margin-top:4px;">appaday portfolio</a>
 </div>
 
-<div id="app-label"><a href="https://augustineiacopelli.github.io">appaday</a> · 013 · flick</div>
 
 <script>
 // ══════════════════════════════════════════════════════
@@ -604,6 +603,7 @@ function endGame() {
     </div>
     <div class="ov-winner">${winText}</div>
     <button class="ov-btn" onclick="restartPrompt()">play again</button>
+    <a href="https://augustineiacopelli.github.io/appaday/" style="font-size:10px;letter-spacing:0.14em;text-transform:uppercase;color:rgba(0,0,0,0.2);text-decoration:none;margin-top:4px;">appaday portfolio</a>
   `;
   ov.classList.remove('hidden');
 }
@@ -656,6 +656,12 @@ function onDown(e) {
   if (phase === 'flying' || phase === 'gameover') return;
   if (!readyPuck) return;
   const pos = getPos(e);
+  // Only begin a drag if the touch starts inside the current player's white HUD strip.
+  // P1 (turn=0): y must be in [0, HUD_H]
+  // P2 (turn=1): y must be in [HUD_H+PLAY_H, CAN_H]
+  const inP1Strip = turn === 0 && pos.y >= 0 && pos.y <= HUD_H;
+  const inP2Strip = turn === 1 && pos.y >= HUD_H + PLAY_H && pos.y <= CAN_H;
+  if (!inP1Strip && !inP2Strip) return;
   prevX = pos.x; prevY = pos.y; velX = 0; velY = 0;
   readyPuck.x = Math.max(readyPuck.r, Math.min(CAN_W - readyPuck.r, pos.x));
   readyPuck.y = Math.max(readyPuck.r, Math.min(CAN_H - readyPuck.r, pos.y));
